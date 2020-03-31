@@ -14,7 +14,7 @@
 
 ```bash
 # 当前环境：httpserver.py 所在文件夹
-# 创建数据库 edu.sb 并进入交互式终端
+# 创建数据库 edu.db 并进入交互式终端
 sqlite3 edu.db
 
 # 创建 results 表
