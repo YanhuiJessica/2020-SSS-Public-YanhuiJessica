@@ -205,6 +205,13 @@
   - 将访问属性修改为 PAGE_READONLY 后，该段内存无法写入，但可以正常读取
   - 使用 VirtualFree 之后，该段内存无法进行写入和读取
 
+### 内存地址管理的基本单位
+
+- VirtualAlloc 的 dwSize 参数描述中提到：分配的页面包含从 lpAddress 到 lpAddress + dwSize 范围内的一个或多个字节的所有页面，证明分配是以页为单位
+- 由 GetSystemInfo 函数获取到的系统信息中的页大小为 4KB<br>
+![页大小为 4KB](img/pagesize.jpg)
+- 因此，内存地址管理的基本单位为 4KB (<ゝωΦ)
+
 ## 参考资料
 
 - [VirtualAlloc function](https://docs.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc)
