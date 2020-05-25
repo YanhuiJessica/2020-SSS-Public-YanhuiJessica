@@ -118,13 +118,51 @@
 ![查看 /etc/rc.d 目录](img/rc.d-rcS.jpg)
 - 运行一下这个脚本，啊——爆炸了！QwQ
 ![没有设备或地址警告](img/no-such-device-boom.jpg)
-  - 设备正在从 NVRAM（非易失性随机访问存储器） 中查找初始配置设置，QEMU 模拟出来的环境当然是——没有。可以使用`nvram-faker`通过设置正确的`LD_PRELOAD`环境变量来假扮 NVRAM，这里涉及到交叉编译，所以暂且不管 XD
+  - 设备正在从 NVRAM（非易失性随机访问存储器） 中查找初始配置设置，QEMU 模拟出来的环境当然是——没有。可以使用`nvram-faker`通过设置正确的`LD_PRELOAD`环境变量来假扮 NVRAM，目前先暂且不管 XD
 - 当`rcS`启动的差不多时（信息输出速度减慢），使用`exit`切换回 QEMU 控制台，可以看到一些服务已经启动起来了<br>
 ![HTTP](img/lighthttpd.jpg)
   - 监听的端口：<br>
 ![监听 80 端口](img/lighthttpd-listen.jpg)
-- 用`telnet`测试连通性，证明端口确实已经打开：<br>
+- 用`telnet`测试连通性（IP 地址通过`ip a`查看），证明端口确实已经打开：<br>
 ![80 端口已开放](img/connected.jpg)
+- 但是目前还无法访问路由器的管理界面(╥ω╥)
+
+### 交叉编译环境
+
+- ~~超级难弄 QwQ~~
+- 编辑`/etc/apt/sources.list`，添加一行：`deb http://ftp.cn.debian.org/debian buster main`（查看所有可用镜像：https://packages.debian.org/buster/i386/gcc-8-mips-linux-gnu-base/download）
+- `sudo apt update`
+- 安装所需包：`sudo apt install emdebian-archive-keyring linux-libc-dev-mips-cross libc6-mips-cross libc6-dev-mips-cross binutils-mips-linux-gnu gcc-8-mips-linux-gnu g++-8-mips-linux-gnu`
+- 安装成功：<br>
+![工具列表](img/mips-linux.jpg)
+
+### nvram-faker
+
+- 克隆仓库：`git clone https://github.com/zcutlip/nvram-faker.git`
+- 编辑`buildmips.sh`修改工具名为当前系统下对应的工具名：<br>
+![修改方式](img/tool-names.jpg)
+- 在`nvram-faker`目录下`make`可以得到`libnvram-faker.so`文件
+- 将`libnvram-faker.so`文件放在 MIPS 虚拟机`/root/squashfs-root/lib`目录下：`scp -P 2222 ./libnvram-faker.so root@127.0.0.1:/root/squashfs-root/lib`
+- `libnvram-faker.so`需要库文件依赖
+  ```bash
+  # 以下操作在 MIPS 虚拟机中进行
+  cp /lib/mips-linux-gnu/libc.so.6 ~/squashfs-root/lib/
+  cp /lib/mips-linux-gnu/ld.so.1 ~/squashfs-root/lib/
+  # 然而依然不行，据说是交叉编译版本有误
+  ```
+- 修改配置文件`nvram.ini`，放在固件文件系统的根目录下：`scp -P 2222 ./nvram.ini root@127.0.0.1:/root/squashfs-root`
+  ```bash
+  # 必要修改项
+  lan_hwaddr=52:54:00:12:34:56
+  lan_ipaddr=192.168.0.1
+  ```
+- 设置`LD_PRELOAD`环境变量：`export LD_PRELOAD=/lib/libnvram-faker.so:$LD_PRELOAD`
+
+#### Trouble Shooting
+
+- [Relocations in generic ELF (EM: 62)](https://groups.google.com/forum/#!topic/android-ndk/iFzaG9pVYtY)
+- [Different libc and ld?](https://github.com/zcutlip/nvram-faker/issues/5)
+
 
 ## 参考资料
 
