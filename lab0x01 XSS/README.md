@@ -2,7 +2,7 @@
 
 ## 实验要求
 
-编写漏洞网页，使之可以进行 XSS 攻击
+- [x] 编写漏洞网页，使之可以进行 XSS 攻击
 
 ## 实验过程
 
@@ -13,7 +13,7 @@
 - 从 http://windows.php.net/download/ 下载 PHP
 ![download zip](img/php-download.jpg)
 - 将下载的压缩包移动到`C:\php`并解压
-- 新建文件`php.ini`，内容与`php.ini-production`的相同
+- 在`C:\php`文件夹下新建文件`php.ini`，内容与`php.ini-production`的相同
 - 编辑`php.ini`，取消`extension_dir = "ext"`的注释，并取消一些基础扩展的注释
     ```
     extension=bz2
