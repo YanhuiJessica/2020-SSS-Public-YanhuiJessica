@@ -28,10 +28,12 @@
     ```
 - 由于系统以 4KB 为单位管理内存，虽然只分配了 100 个字节，但这 100 个字节所在的 4KB 区域都可以写入、读取数据<br>
 ![整个 4KB 区域存取检验](img/malloc.jpg)
-- 由于溢出的数据过多覆盖了其他正常的数据导致程序无法正常退出（程序可能运行不出结果，那么覆盖的数据具有一定的随机性，推测分配的 100 字节在 4KB 区域中的位置可能不同）
+- 由于溢出的数据过多覆盖了其他正常的数据导致程序无法正常退出（由于基址的随机性，分配的 100 字节在 4KB 区域中的位置可能不同，程序有时可能运行不出结果）
+  - `malloc`分配的区域后有其他数据<br>
+![malloc 只刚好分配了 100 字节](img/malloc-memory.png)
 - 若溢出的字节数较少，则对程序的影响较小<br>
 ![可以正常退出](img/small-influence.jpg)
-- 如果存取访问分配的 4KB 以外的数据，检测程序可以正常退出，推测系统给检测程序分配的内存为 4KB，覆盖的是检测程序外的未知区域<br>
+- 如果存取访问分配的 4KB 以外的数据，读写的是程序内存页未被使用的部分，检测程序可以正常退出<br>
 ![存取其他区域，程序可以正常退出](img/other-space.jpg)
 
 ### VirtualAlloc 和 VirtualFree
@@ -219,3 +221,4 @@
 - [VirtualProtect function](https://docs.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualprotect)
 - [Memory Protection Constants](https://docs.microsoft.com/zh-cn/windows/win32/memory/memory-protection-constants)
 - [Reserving and Committing Memory](https://docs.microsoft.com/zh-cn/windows/win32/memory/reserving-and-committing-memory)
+- [try to buffer overflow value allocated by malloc()](https://stackoverflow.com/questions/9901366/try-to-buffer-overflow-value-allocated-by-malloc)
