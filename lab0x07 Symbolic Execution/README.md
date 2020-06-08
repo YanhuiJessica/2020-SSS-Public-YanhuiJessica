@@ -141,6 +141,203 @@ docker rm klee_container
   ```
 - 注意：在对多个条件语句使用`klee_assume`时，类似`&&`和`||`布尔条件句可能会被编译成计算表达式结果之前的分支代码，这种情况下 KLEE 可能将在调用`klee_assume`之前岔开进程，探索不必要的状态。尽可能使用简单的表达式，并使用`&`和`|`运算符
 
+## Tutorial 3 - The Symbolic Maze!
+
+- 退出 KLEE 的容器，直接使用`klee-maze`的 Docker 镜像
+  ```bash
+  docker pull grese/klee-maze
+  docker run -it grese/klee-maze
+  ```
+- 迷宫文件在`~/maze`文件夹下
+- 迷宫 C 代码分析
+  ```c
+  #include<string.h>
+  #include<stdio.h>
+  #include<stdlib.h>
+
+  // Maze hardcoded dimensions
+  #define H 7
+  #define W 11
+  #define ITERS 28
+
+  // The maze map
+  char maze[H][W] = {
+      "+-+---+---+",
+      "| |     |#|",
+      "| | --+ | |",
+      "| |   | | |",
+      "| +-- | | |",
+      "|     |   |",
+      "+-----+---+"
+  };
+
+
+  // Draw the maze state in the screen!
+  void draw ()
+  {
+    int i, j;
+    for (i = 0; i < H; i++)
+      {
+        for (j = 0; j < W; j++)
+            printf ("%c", maze[i][j]);
+        printf ("\n");
+      }
+    printf ("\n");
+  }
+
+  // The main function
+  int main (int argc, char *argv[])
+  {
+    int x, y;     // Player position
+    int ox, oy;   // Old player position
+    int i = 0;    // Iteration number
+    char program[ITERS];
+
+  // Initial position
+    x = 1;
+    y = 1;
+    maze[y][x]='X';
+
+  // Read the directions 'program' to execute...
+      read(0,program,ITERS);
+
+  // Iterate and run 'program'
+    while(i < ITERS)
+      {
+        // Save old player position
+        ox = x;
+        oy = y;
+        // Move polayer position depending on the actual command
+        switch (program[i])
+        {
+        case 'w':
+          y--;
+          break;
+        case 's':
+          y++;
+          break;
+        case 'a':
+          x--;
+          break;
+        case 'd':
+          x++;
+          break;
+        default:
+            printf("Wrong command!(only w,s,a,d accepted!)\n");
+            printf("You loose!\n");
+            exit(-1);
+        }
+
+        // If hit the price, You Win!!
+        if (maze[y][x] == '#')
+          {
+            printf ("You win!\n");
+            printf ("Your solution <%42s>\n",program);
+            exit (1);
+          }
+        // If something is wrong do not advance
+        if (maze[y][x] != ' ' && !((y == 2 && maze[y][x] == '|' && x > 0 && x < W)))
+            // 当 y 值为 2 且 x 值在迷宫范围内，当前位置为墙时，可以穿墙！
+          {
+            x = ox;
+            y = oy;
+          }
+
+        // If crashed to a wall! Exit, you loose
+        if (ox==x && oy==y){
+              printf("You loose\n");
+              exit(-2);
+        }
+
+        maze[y][x]='X'; // put the player on the maze
+        draw (); //draw it
+
+        i++;  //increment iteration
+        sleep(1); //wait to human
+      }
+  // You couldn't make it! You loose!
+  printf("You loose\n");
+  }
+  ```
+- 先看看程序运行的效果
+  ```bash
+  # 编译
+  gcc maze.c -o maze
+
+  # solution.txt 中存储的是人肉眼可见的「唯一」解决方案
+  cat solution.txt | ./maze
+  ```
+- 手动寻路（`a`左，`d`右，`w`上，`s`下）<br>
+![程序运行效果](img/maze-byhand.gif)
+- 修改`maze.c`以便使用 KLEE 测试，修改后的文件为`maze_klee.c`
+  ```c
+  // 添加头文件
+  #include<klee/klee.h>
+
+  // 将
+  read(0,program,ITERS);
+  // 替换为
+  klee_make_symbolic(program,ITERS,"program");
+
+  if (maze[y][x] == '#')
+  {
+      printf("You win!\n");
+      printf("Your solution %s\n", program);
+      // 添加 klee_assert(0) 来标志成功的情况
+      // KLEE 将会在成功的情况报错，以区别一般的情况
+      klee_assert(0);
+      exit(1);
+  }
+  ```
+- 将 C 语言文件编译转化为 LLVM bitcode 并使用 KLEE 运行，最终求解出四种解法
+  ```bash
+  cd ~/maze
+
+  cat ./scripts/build_bc.sh
+  # #!/bin/bash
+
+  # # Builds the llvm bytecode from maze_klee.c source
+  # clang -c -I../klee_src/include -emit-llvm ./maze_klee.c -o ./maze_klee.bc
+  ./scripts/build_bc.sh
+
+  cat ./scripts/run_klee.sh
+  # #!/bin/bash
+
+  # # Runs klee on maze bytecode file
+  # klee --emit-all-errors ./maze_klee.bc
+  # -emit-all-errors: Generate tests cases for all errors (default=false, i.e. one per (error,instruction) pair)
+  ./scripts/run_klee.sh
+
+  cat ./scripts/show_solutions.sh
+  # #!/bin/bash
+  # # Get testIDs from tests where klee threw an assertion.
+  # TEST_IDS=`find ./klee-last/*.assert.err -printf "%f\n" | sed -r 's/(.*).assert.err/\1/'`;
+  # # Bail out if no klee assertions found. Otherwise, print header.
+  # if [ -z "$TEST_IDS" ];
+  # then
+  #     echo "No solutions found";
+  #     exit -1;
+  # else
+  #     echo "";
+  #     echo "TESTID       SOLUTION";
+  # fi
+  # # Get result for each test, and print solution.
+  # for test_id in $TEST_IDS;
+  # do
+  #     # Get klee results for testID
+  #     RESULT=`ktest-tool "./klee-last/$test_id.ktest"`;
+  #     # Extract the solution from test results
+  #     SOLUTION=`echo $RESULT | sed -r 's/(.*)\stext:\s//'`;
+  #     echo "$test_id:  $SOLUTION";
+  # done
+  # echo "";
+  ./scripts/show_solutions.sh
+  ```
+  ![运行结果](img/maze-result.jpg)
+- emm？有一个很短诶？手动跑一下看看，穿墙而过！恭喜 KLEE 成功发现了后门ヽ(°◇° )ノ<br>
+![穿墙直抵终点](img/maze-err-byhand.gif)
+
 ## 参考资料
 
 - [Tutorials · KLEE](https://klee.github.io/tutorials/)
+- [klee-maze](https://github.com/grese/klee-maze)
