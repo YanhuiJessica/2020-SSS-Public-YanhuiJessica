@@ -3,6 +3,10 @@
 ## 实验要求
 
 - [x] 安装 KLEE，完成官方 Tutorials
+  - [Testing a Small Function](#tutorial-1---testing-a-small-function)
+  - [Testing a Simple Regular Expression Library](#tutorial-2---testing-a-simple-regular-expression-library)
+  - [The Symbolic Maze!](#tutorial-3---the-symbolic-maze)
+  - [Using Symbolic Environment](#tutorial-7---using-symbolic-environment)
 
 ## 实验环境
 
@@ -336,6 +340,172 @@ docker rm klee_container
   ![运行结果](img/maze-result.jpg)
 - emm？有一个很短诶？手动跑一下看看，穿墙而过！恭喜 KLEE 成功发现了后门ヽ(°◇° )ノ<br>
 ![穿墙直抵终点](img/maze-err-byhand.gif)
+
+## Tutorial 7 - Using Symbolic Environment
+
+### `-sym-arg` Usage
+
+- `klee_make_symbolic()`面向程序内定义的变量，`-sym-arg`面向命令行参数
+- `-sym-arg <N>`向程序提供一个长度为 N 的符号参数，它的变种`-sym-args <MIN> <MAX> <N>`提供最少 MIN 个、最多 MAX 个符号参数，每一个参数最大长度为 N
+- `password.c`：根据一个硬编码的密码，查找是否有匹配的命令行参数
+  ```c
+  #include <stdio.h>
+
+  int check_password(char *buf) {
+    if (buf[0] == 'h' && buf[1] == 'e' &&
+        buf[2] == 'l' && buf[3] == 'l' &&
+        buf[4] == 'o')  // hello
+      return 1;
+    return 0;
+  }
+
+  int main(int argc, char **argv) {
+    if (argc < 2)
+      return 1;
+
+    if (check_password(argv[1])) {
+      printf("Password found!\n");
+      return 0;
+    }
+
+    return 1;
+  }
+  ```
+- KLEE 使用选项`-posix-runtime`来启用符号环境
+  ```bash
+  clang -c -g -emit-llvm password.c
+  klee -posix-runtime password.bc -sym-arg 5
+  ```
+  结果一下跑出 63 条路径(°◇° )<br>
+  ![比官方给的多了好多](img/sym-arg-test-result.jpg)
+- 写一个脚本看一下，生成的各种字符串有空格和不可打印字符，最后一个是结束符，所幸结果还是找到了
+  ```bash
+  #!/usr/bin/env bash
+
+  num=($(seq -w 1 63))
+  for i in "${num[@]}"; do
+    echo -n "$i: "
+    ktest-tool "klee-last/test0000$i.ktest" | grep "object 0: text: "
+  done
+  ```
+  ```bash
+  $ bash show-result.sh
+  01: object 0: text: .  ...
+  02: object 0: text: . .. .
+  03: object 0: text: . ....
+  04: object 0: text:    ...
+  05: object 0: text: . . ..
+  06: object 0: text: . .  .
+  07: object 0: text: h  ...
+  08: object 0: text:  . . .
+  09: object 0: text:      .
+  10: object 0: text:    . .
+  11: object 0: text: he ...
+  12: object 0: text: .    .
+  13: object 0: text: hel...
+  14: object 0: text: ..  ..
+  15: object 0: text: h. . .
+  16: object 0: text: h    .
+  17: object 0: text:  . ...
+  18: object 0: text:  .....
+  19: object 0: text:  ..  .
+  20: object 0: text: .. ...
+  21: object 0: text: .. . .
+  22: object 0: text: h ....
+  23: object 0: text:   ....
+  24: object 0: text:   .. .
+  25: object 0: text: .  . .
+  26: object 0: text: .   ..
+  27: object 0: text:  ... .
+  28: object 0: text: h.   .
+  29: object 0: text: ......
+  30: object 0: text: h  . .
+  31: object 0: text:  .   .
+  32: object 0: text: h. ...
+  33: object 0: text: .... .
+  34: object 0: text: he.. .
+  35: object 0: text: h .. .
+  36: object 0: text: he   .
+  37: object 0: text:   .  .
+  38: object 0: text: ..   .
+  39: object 0: text: hel  .
+  40: object 0: text: h .  .
+  41: object 0: text: h... .
+  42: object 0: text: h.....
+  43: object 0: text: he....
+  44: object 0: text: h..  .
+  45: object 0: text: he . .
+  46: object 0: text:  .  ..
+  47: object 0: text: ... ..
+  48: object 0: text: h . ..
+  49: object 0: text: hel. .
+  50: object 0: text: he.  .
+  51: object 0: text: h.  ..
+  52: object 0: text: ...  .
+  53: object 0: text: hell .
+  54: object 0: text:   . ..
+  55: object 0: text: hello.  # Password Find！
+  56: object 0: text:  .. ..
+  57: object 0: text: he. ..
+  58: object 0: text: h.. ..
+  59: object 0: text:     ..
+  60: object 0: text: h   ..
+  61: object 0: text: he  ..
+  62: object 0: text: hell..
+  63: object 0: text: hel ..
+  ```
+
+### `-sym-files` Usage
+
+- 选项`-sym-files <NUM> <N>`创建 NUM 个 符号文件，第一个文件名为 A，第二个文件名为 B，以此类推，大小都为 N
+- 类似的选项`-sym-stdin`和`-sym-stdout`将标准输入/输出符号化
+- `password.c`：从指定的文件中读取字符串，判断是否匹配硬编码的密码；如果未指定文件，或者在打开文件失败，将从标准输入中读取
+  ```c
+  #include <sys/types.h>
+  #include <sys/stat.h>
+  #include <fcntl.h>
+  #include <stdio.h>
+  #include <unistd.h>
+
+  int check_password(int fd) {
+    char buf[5];
+    if (read(fd, buf, 5) != -1) {
+      if (buf[0] == 'h' && buf[1] == 'e' &&
+    buf[2] == 'l' && buf[3] == 'l' &&
+    buf[4] == 'o')
+        return 1;
+    }
+    return 0;
+  }
+
+  int main(int argc, char **argv) {
+    int fd;
+
+    if (argc >= 2) {
+      if ((fd = open(argv[1], O_RDONLY)) != -1) {
+        if (check_password(fd)) {
+          printf("Password found in %s\n", argv[1]);
+          close(fd);
+          return 0;
+        }
+        close(fd);
+        return 1;
+      }
+    }
+
+    if (check_password(0)) {
+      printf("Password found in standard input\n");
+      return 0;
+    }
+
+    return 1;
+  }
+  ```
+- 将 C 语言文件编译转化为 LLVM bitcode：`clang -c -g -emit-llvm password.c`
+- 使用`-sym-stdin`提供一个长度为 10 标准符号输入：`klee -posix-runtime password.bc -sym-stdin 10`，KLEE 成功找到密码<br>
+![运行结果](img/sym-stdin-result.jpg)
+- 通过指定选项`-sym-files 1 10`，KLEE 将提供一个大小为 10 字节的符号文件，该文件被 KLEE 命名为 A，因此可以将该文件的文件名作为参数提供给我们编写的程序，KLEE 也能成功找到密码：`klee -posix-runtime password.bc A -sym-files 1 10`<br>
+![运行结果](img/sym-file-result.jpg)
 
 ## 参考资料
 
