@@ -150,7 +150,7 @@ label = happywin
 platform = windows
 ip = 192.168.56.101
 snapshot = finish-configuration
-interface = eth1
+interface = vboxnet0
 ```
 
 #### reporting.conf
