@@ -51,6 +51,14 @@ git clone https://github.com/MysticRyuujin/guac-install.git /tmp/guac-install
 cd /tmp/guac-install/
 sudo ./guac-install.sh --nomfa --installmysql --mysqlpwd pass --guacpwd pass
 # 软件包依赖问题可通过 aptitude 解决
+
+# 安装 Volatility
+# distorm3 v3.5.0 breaks volatility: https://github.com/volatilityfoundation/volatility/issues/719
+pip install distorm3==3.4.4 openpyxl ujson pycrypto pytz
+git clone https://github.com/volatilityfoundation/volatility.git
+cd volatility/
+python setup.py build
+python setup.py install
 ```
 `cuckoo -d`自动创建工作目录位于`~/.cuckoo`
 
@@ -94,7 +102,6 @@ vboxmanage storageattach "happywin" --storagectl "IDE Controller" --port 0 --dev
 vboxmanage hostonlyif create
 vboxmanage modifyvm "happywin" --nic1 hostonly
 vboxmanage modifyvm "happywin" --hostonlyadapter1 vboxnet0
-
 ```
 
 #### Trouble-Shooting
@@ -105,9 +112,22 @@ vboxmanage modifyvm "happywin" --hostonlyadapter1 vboxnet0
 
 为了使 Guest 端能够上网，Host 端需要配置端口转发
 ```bash
-iptables -A FORWARD -o eth0 -i vboxnet0 -s 192.168.56.0/24 -m conntrack --ctstate NEW -j ACCEPT
-iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-iptables -A POSTROUTING -t nat -j MASQUERADE
+iptables -t nat -A POSTROUTING -o eth0 -s 192.168.56.0/24 -j MASQUERADE
+
+# Default drop.
+iptables -P FORWARD DROP
+
+# Existing connections.
+iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# Accept connections from vboxnet to the whole internet.
+iptables -A FORWARD -s 192.168.56.0/24 -j ACCEPT
+
+# Internal traffic.
+iptables -A FORWARD -s 192.168.56.0/24 -d 192.168.56.0/24 -j ACCEPT
+
+# Log stuff that reaches this point (could be noisy).
+iptables -A FORWARD -j LOG
 
 # 使以上规则永久生效
 vi /etc/network/interfaces
@@ -200,6 +220,10 @@ enabled = yes
 ![分析日志](img/analyer-log.jpg)
 - 由 Behavioral Analysis 可知，产生的可执行程序为`spo0lsv.exe`，由文件名可知该样本是熊猫烧香的变种，下方是关于所选可执行程序的行为跟踪，包括调用的函数、操作的文件等<br>
 ![Behavioral Analysis](img/behavioral-analysis.jpg)
+
+#### Trouble-Shooting
+
+- [Cuckoo not able to analyze (Read timed out)](https://github.com/cuckoosandbox/cuckoo/issues/2308#issuecomment-498938345)
 
 ## 参考资料
 
