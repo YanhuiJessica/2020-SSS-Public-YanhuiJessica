@@ -220,6 +220,7 @@ enabled = yes
 ![分析日志](img/analyer-log.jpg)
 - 由 Behavioral Analysis 可知，产生的可执行程序为`spo0lsv.exe`，由文件名可知该样本是熊猫烧香的变种，下方是关于所选可执行程序的行为跟踪，包括调用的函数、操作的文件等<br>
 ![Behavioral Analysis](img/behavioral-analysis.jpg)
+- [Cuckoo 在线分析结果](https://cuckoo.cert.ee/analysis/1783036/summary/)
 
 #### Trouble-Shooting
 
